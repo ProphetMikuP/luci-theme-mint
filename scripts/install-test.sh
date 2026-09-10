@@ -137,6 +137,17 @@ for f in "${CHECK_LIST[@]}"; do
 done
 
 if [ "$I18N" = 0 ]; then
+	# Old ucode releases (including the 2023 series still shipped by some
+	# vendor firmware) require a semicolon after an exported function
+	# declaration. Newer ucode accepts the missing semicolon, so a current-SDK
+	# build alone cannot catch this compatibility regression.
+	python3 - "$ROOT/usr/share/ucode/luci/mint/wallpaper.uc" <<'PY' \
+		|| fail "wallpaper module is incompatible with old ucode (exported function must end with }; )"
+import sys
+source = open(sys.argv[1], encoding='utf-8').read().rstrip()
+raise SystemExit(0 if source.endswith('};') else 1)
+PY
+
 	# Executable bit must survive packaging (R-01): cron executes
 	# /usr/bin/mz-wallpaper-fetch.sh directly; a 0644 payload silently kills
 	# the server-side wallpaper cache feature.

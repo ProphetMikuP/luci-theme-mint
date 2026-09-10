@@ -226,4 +226,4 @@ export function getWallpapers() {
 		pc: deviceGroup(cfg, 'pc'),
 		mobile: deviceGroup(cfg, 'mobile')
 	};
-}
+};
