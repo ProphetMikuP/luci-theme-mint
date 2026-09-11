@@ -83,11 +83,17 @@ return baseclass.extend({
 		if (document.getElementById('mz-login'))
 			return;
 
-		/* Dark theme (2026-09-09): global glass on PURE BLACK, never a
-		   wallpaper. The mz-has-wallpaper class still activates the whole
-		   glass token/component layer, but no image is fetched and CSS
-		   paints the wallpaper layers black (see the dark ::before/::after
-		   overrides in cascade.css). */
+		/* Dark mode: deep grey glass, no wallpaper.
+		   The early return below skips every network path, so a dark page
+		   never requests a wallpaper API; the inline --mz-wallpaper*
+		   properties are cleared so a stale light-mode URL can never leak
+		   through; and cascade.css removes BOTH wallpaper pseudo-elements
+		   from the box tree (`content: none`), so nothing is composited.
+		   The mz-has-wallpaper class is still applied on purpose - it is
+		   the switch that enables the whole glass component layer, and only
+		   the wallpaper layers are meant to disappear in dark mode.
+		   The user's UCI wallpaper settings are never modified: switching
+		   back to light re-runs this method and reloads them. */
 		if (document.documentElement.getAttribute('data-theme') === 'dark') {
 			document.documentElement.style.removeProperty('--mz-wallpaper');
 			document.documentElement.style.removeProperty('--mz-wallpaper-overlay');
@@ -97,8 +103,15 @@ return baseclass.extend({
 		}
 
 		const cfg = window.mintWallpaper;
-		if (!cfg || cfg.enabled === false || cfg.ui_random === false) {
-			/* No wallpaper configured/enabled: still run the global
+		/* NOTE: ui_random is deliberately NOT tested here any more. It only
+		   governs per-navigation remote randomisation; the server-side
+		   cached image (cron -> /luci-static/mint/wallpaper-<kind>.img) is
+		   a LOCAL file and must stay usable with ui_random off. Testing it
+		   here is what produced the "random wallpaper stopped working"
+		   report: the shipped default is ui_random=0, so the cached
+		   wallpaper was never applied at all. */
+		if (!cfg || cfg.enabled === false) {
+			/* Wallpaper switched off entirely: still run the global
 			   frosted-glass layer. --mz-wallpaper stays "none", so the
 			   CSS ::after paints the soft gradient fallback and every
 			   admin page gets glass cards + soft shadow regardless
@@ -141,6 +154,14 @@ return baseclass.extend({
 		}
 		else if (cacheFresh) {
 			urls = [cached.url];
+		}
+		else if (cfg.ui_random === false) {
+			/* Nothing cached anywhere and the admin has not opted in to
+			   per-navigation remote randomisation (OT-09): keep the soft
+			   gradient fallback rather than firing an API request on every
+			   page view. The glass layer still switches on. */
+			document.body.classList.add('mz-has-wallpaper');
+			return;
 		}
 		else {
 			/* Random multi-source: shuffle the configured list and try each

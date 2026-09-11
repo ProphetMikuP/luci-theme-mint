@@ -8,9 +8,11 @@
 
 ## 功能特性
 
-- 基于 CSS 变量（Design Tokens）的现代设计系统：色彩、间距、圆角、阴影、字体
-- 浅色 / 深色 / 跟随系统三种配色（默认跟随系统，尊重 `prefers-color-scheme`；侧栏按钮可覆盖）
-- 随机壁纸全屏登录页（按设备类型自动选择图源，带渐变兜底）；支持自定义壁纸（上传图片或填写图片直链）
+- 基于 CSS 变量（Design Tokens）的现代设计系统：色彩、间距、圆角、阴影、字体、**层叠层级（`--mz-z-*`）**、**玻璃参数（`--mz-glass-*`）**
+- 浅色 / 深色 / 跟随系统三种配色（默认跟随系统，尊重 `prefers-color-scheme`；侧栏按钮可覆盖）。浅色为白色微透毛玻璃（0.62–0.84 / blur 18–20px），深色为深灰毛玻璃（0.88–0.92）且**完全不加载壁纸**（不渲染壁纸层、不请求壁纸 API、不修改用户壁纸配置）
+- 随机壁纸全屏登录页（按设备类型自动选择图源，带渐变兜底）；支持自定义壁纸（上传图片或填写图片直链）。壁纸设置入口：系统 → Mint Wallpaper → Wallpaper Settings
+- 服务端壁纸缓存：cron 每 5 分钟把随机图落到 `/luci-static/mint/wallpaper-<kind>.img`，后台优先使用这份本地缓存（可 304 复用、零外部请求）。「后台随机壁纸」开关只控制是否每次导航重新拉取远程随机图，关闭时本地缓存仍会生效
+- 壁纸与布局解耦：壁纸层为 body 伪元素并置于**负 z-index**，因此内容区不需要抬升层级，弹出层永远不会被侧栏或卡片压住
 - 侧栏导航从 LuCI 实时菜单树渲染（无硬编码菜单）
 - 移动端抽屉式导航 + 遮罩
 - 480px 至 1280px+ 全段响应式；移动端表格重排为卡片
@@ -20,66 +22,74 @@
 - 国际化就绪（英文 + 简体中文：`po/` 编译为独立翻译包 `luci-i18n-mint-zh-cn` 随 Release 发布）
 - LuCI 弹窗系统主题化（#modal_overlay 遮罩 + 居中对话框，保存并应用进度可见）
 - cbi 选项卡（ul.cbi-tabmenu）完整样式与显隐规则
-- cbi-dropdown 深度主题化：[open] 属性选择器 + 核心样式反制，全站下拉（含编辑弹窗设备选择）可正常展开选择
+- 桌面隐藏页面标题栏（页面自身 `<h2>` 已承担标题）；**LuCI 原生 `#indicators` 槽位拆为独立 `.mz-indicatorbar`**，因此隐藏标题栏不会连带丢失未保存更改/应用指示器与轮询徽标。移动端保留标题栏并抑制重复标题
+- cbi-dropdown 深度主题化：`[open]` 属性选择器 + 核心样式反制。**展开方向与定位完全交还 LuCI 组件 JS**（主题不预设 `top`/`bottom`），下拉在空间不足时可正常向上翻转；全站下拉（含编辑弹窗设备选择）可正常展开与选择
 - 全站 8px 半透明细滚动条（webkit + Firefox），color-scheme 跟随深色模式
 - 接口页定制：区域头降饱和色条、设备悬停详情面板、接口详情玻璃卡片
 - 第三方应用设计变量桥接（--brand/--surface/--text 等，兼容 taygedo 等应用）；h5000m_netmode 网络出口页对比度适配
+- **壁纸设置已拆分为独立包 `luci-app-mint-wallpaper`**（2026-09-11）：主题包只提供 UI 与模板，壁纸设置页、rpcd 后端、缓存 cron 与 UCI 配置归该包所有，可单独安装/升级/卸载。侧栏入口位于「系统」分组下的「Mint 壁纸」；并自带独立翻译包 `luci-i18n-mint-wallpaper-zh-cn`
 
 ## 目录结构
 
 ```
-.github/workflows/build-apk.yml # GitHub Actions 云编译：OpenWrt 25.12/snapshot → .apk
-.github/workflows/build-ipk.yml # ipk 构建：OpenWrt 24.10 / 23.05（原生 ipk 后端）
-.github/workflows/release.yml   # 汇总两条流水线并发布到 GitHub Release
-theme/                        # 主题源码（放入 buildroot 的 feeds/luci/themes/ 下编译）
-├── Makefile                  # 基于 luci.mk 的包定义
+.github/workflows/build.yml     # GitHub Actions 云编译：直出 .ipk + .apk（all/noarch）
+.github/workflows/release.yml   # 汇总构建产物并发布到 GitHub Release
+theme/                          # 主题包源码（luci-theme-mint，纯 UI）
+├── Makefile                    # 基于 luci.mk 的包定义
 ├── htdocs/luci-static/mint/
-│   ├── cascade.css           # 设计系统 + 布局 + 组件
-│   ├── overview-dashboard.js # PC 端总览仪表盘（仅桌面端 Status > Overview 加载）
-│   ├── overview-mobile.js    # 移动端总览增强（仅手机/平板 Status > Overview 加载）
-│   ├── mz-ui.js              # 设备无关通用 UI 辅助（全后台页面加载）
-│   ├── overview-banner.png   # 顶栏品牌图
-│   ├── login-logo.png        # 登录页 Logo
-│   └── favicon/              # favicon.svg（矢量）/ -48.png / -180.png
+│   ├── cascade.css             # 设计系统 + 布局 + 组件
+│   ├── overview-dashboard.js   # PC 端总览仪表盘（仅桌面端 Status > Overview 加载）
+│   ├── overview-mobile.js      # 移动端总览增强（仅手机/平板 Status > Overview 加载）
+│   ├── mz-ui.js                # 设备无关通用 UI 辅助（全后台页面加载）
+│   ├── overview-banner.png     # 顶栏品牌图
+│   ├── login-logo.png          # 登录页 Logo
+│   └── favicon/                # favicon.svg（矢量）/ -48.png / -180.png
 ├── htdocs/luci-static/resources/
-│   ├── menu-mint.js      # 侧栏/菜单渲染器（LuCI JS API）
+│   ├── menu-mint.js            # 侧栏/菜单渲染器（LuCI JS API）
 │   └── view/mint/
-│       ├── sysauth.js        # 登录页前端
-│       └── wallpaper.js      # 壁纸设置表单
+│       └── sysauth.js          # 登录页前端
 ├── ucode/template/themes/mint/
-│   ├── header.ut             # 页面骨架、侧栏、顶栏
-│   ├── footer.ut             # 页脚、L.require('menu-mint')
-│   └── sysauth.ut            # 登录页（保留原生认证表单）
+│   ├── header.ut               # 页面骨架、侧栏、顶栏
+│   ├── footer.ut               # 页脚、L.require('menu-mint')
+│   └── sysauth.ut              # 登录页（保留原生认证表单）
 ├── ucode/mint/
-│   └── wallpaper.uc          # UCI 配置读取 + 服务端钳制（无外部请求、无缓存）
+│   └── wallpaper.uc            # 渲染期配置解析（只读 UCI；被 header.ut 静态 import，故随主题发布）
 ├── root/
-│   ├── etc/config/mint           # UCI 配置
-│   ├── etc/uci-defaults/30_luci-theme-mint
-│   ├── usr/libexec/rpcd/mint     # ubus 兼容桩（refresh 方法，无实际缓存）
-│   ├── usr/share/luci/menu.d/luci-theme-mint.json
-│   ├── usr/share/luci/acl.d/luci-theme-mint.json
-│   └── usr/share/rpcd/acl.d/luci-theme-mint.json  # rpcd 授权组（菜单 ACL 必需）
-└── po/                       # templates + zh_Hans
+│   └── etc/uci-defaults/30_luci-theme-mint   # 主题注册 + 迁移清理
+└── po/                         # templates + zh_Hans
+
+wallpaper/                      # 壁纸设置包源码（luci-app-mint-wallpaper，可独立安装）
+├── Makefile                    # 基于 luci.mk 的包定义（Depends: luci-base +curl）
+├── po/zh_Hans/                 # 独立翻译目录（生成 luci-i18n-mint-wallpaper-zh-cn）
+├── htdocs/luci-static/resources/view/mint/
+│   └── wallpaper.js            # 壁纸设置表单
+└── root/
+    ├── etc/config/mint                 # UCI 配置（本包 conffile）
+    ├── etc/uci-defaults/30_luci-app-mint-wallpaper
+    ├── lib/upgrade/keep.d/luci-app-mint-wallpaper
+    ├── usr/bin/mz-wallpaper-fetch.sh   # 服务端壁纸缓存刷新（cron 每 5 分钟）
+    ├── usr/libexec/rpcd/mint           # ubus 后端（save / refresh / dashboard）
+    └── usr/share/luci/menu.d/luci-app-mint-wallpaper.json  # 独立顶级菜单入口
 ```
 
 ## 云编译（GitHub Actions）
 
-推送到 `main` 分支或打 `v*` 标签自动触发，也可在 Actions 页面手动触发（workflow_dispatch）。两条构建流水线 + 一条汇总发布：
+推送到 `main` 分支或打 `v*` 标签自动触发，也可在 Actions 页面手动触发（workflow_dispatch）。单条构建流水线 + 一条汇总发布：
 
 | Workflow | 说明 |
 | --- | --- |
-| `build-apk.yml` | OpenWrt 25.12 + snapshot（各 1 个目标），apk 后端（`CONFIG_USE_APK=y`）原生构建，产出 `.apk`（`noarch`） |
-| `build-ipk.yml` | OpenWrt 24.10 + 23.05（各 1 个目标），ipk 后端原生构建，产出 `.ipk`（`all`）；23.05 仍走独立的 `package-ipkg.mk` 代码路径，值得保留覆盖 |
-| `release.yml` | 两条流水线都成功后汇总全部产物，发布 `nightly`（推 main）或正式版本（打 `v*` 标签） |
+| `build.yml` | 一次产出全部 4 个包：主题 + 简中翻译 × `.ipk`（`all`）+ `.apk`（`noarch`）。纯数据直出，无需 SDK，数十秒完成 |
+| `release.yml` | 构建成功后汇总产物，发布 `nightly`（推 main）或正式版本（打 `v*` 标签） |
 
-每个 OpenWrt 系列产出**两个包**：主题 `luci-theme-mint` 与简中翻译 `luci-i18n-mint-zh-cn`
-（官方 LuCI 规范将 `po/` 编译为独立翻译包，只装主题时界面为英文），两者成对发布、成对安装。
+产出**四个文件**：主题 `luci-theme-mint` 与简中翻译 `luci-i18n-mint-zh-cn`
+（官方 LuCI 规范将 `po/` 编译为独立翻译包，只装主题时界面为英文），各两种格式，成对发布、成对安装。
 
-- 主题是纯数据包（无 `src/`），包与目标平台无关：每个 OpenWrt 系列只构建 1 个目标（x86/64），产物可装于任意平台
-- 基于官方**预编译 SDK**：不编工具链，但会真实编译主题的完整依赖链（rpcd、ucode、lucihttp、curl 等），单次构建约 10-20 分钟
-- SDK tarball 按官方 sha256 缓存（GitHub Actions cache），重复构建/重试秒级复用；每次仍按官方 `sha256sums` 重新校验
-- 每个产物先过 `scripts/verify-package.sh`（结构 + 元数据 + 载荷清单 + 可执行位），再进 `scripts/install-test.sh`（真实包管理器安装到临时 root）
-- 每个 `.apk`/`.ipk` 旁附 `.buildinfo.txt`（SDK 来源、LuCI 分支与 commit、内核版本等构建证据）
+- 主题是纯数据包（无 `src/`），包与目标平台无关：一份 `all`/`noarch` 包可装于任意目标
+- **不再拉取 OpenWrt SDK**：`scripts/build-direct.sh` 按 `luci.mk` 的安装布局装配载荷，再用与官方后端一致的容器格式打包
+  - ipk = `gzip(tar(debian-binary, data.tar.gz, control.tar.gz))`（OpenWrt `scripts/ipkg-build`）
+  - apk = apk-tools v3 ADB 容器（`ADBd` + raw deflate，与 `apk mkpkg` 一致）
+- 每个产物先过 `scripts/verify-package.sh`（结构 + 元数据 + 载荷清单 + 可执行位），再进 `scripts/install-test.sh`（安装到临时 root）
+- 每个 `.apk`/`.ipk` 旁附 `.buildinfo.txt`（主题 commit、包版本、构建方式等证据）
 
 ## 本地编译
 
@@ -179,7 +189,7 @@ API 不可达（无外网、DNS 失败、超时）时登录页依然即时渲染
 
 ## 壁纸设置
 
-设置页位于 `系统` > `Mint Wallpaper` > `Wallpaper Settings`（`/cgi-bin/luci/admin/system/mintwallpaper/settings`），配置文件 `/etc/config/mint`：
+设置页位于 `系统` > `Mint 壁纸`（`/cgi-bin/luci/admin/system/mint-wallpaper/settings`），由独立包 `luci-app-mint-wallpaper` 提供；配置文件 `/etc/config/mint`：
 
 | 选项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -206,8 +216,8 @@ API 不可达（无外网、DNS 失败、超时）时登录页依然即时渲染
 | ImmortalWrt | 21.02+ | ucode | `.apk` | ImmortalWrt 早于主线迁移至 ucode，并默认使用 apk 包管理 |
 | LEDE / OpenWrt ≤ 19.07 | — | — | — | **不支持**：ucode 模板与 rpcd ACL 路径在旧分支不可用 |
 
-云编译产物在每次 Release 同时提供双格式：`.apk`（OpenWrt 25.12 / snapshot SDK 构建）与 `.ipk`
-（24.10 / 23.05 SDK 构建），直接选择与你设备包管理器对应的产物安装；每系列各含主题与简中翻译两个包。
+云编译产物在每次 Release 同时提供双格式：`.apk`（OpenWrt 25.12+ / ImmortalWrt）与 `.ipk`
+（仍使用 opkg 的 24.10 / 23.05），直接选择与你设备包管理器对应的产物安装；两种格式各含主题与简中翻译，共 4 个包。
 
 ### 运行时依赖
 

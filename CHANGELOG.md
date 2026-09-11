@@ -7,7 +7,346 @@
 
 ---
 
-## [Unreleased]
+## [1.0.2] - 2026-09-11
+
+### Fixed (2026-09-11 — 保存并应用泄漏未选中项、diagnostics 行布局、手机卡片对齐)
+
+**一、「保存并应用」关闭态泄漏「强制应用」**
+- 根因：上一轮的 combo 内框规则给按钮 caption 的**每一个** li 都写了
+  `display: flex`，其 ID 特异性压过了关闭态的
+  `.cbi-dropdown:not([open]) > ul > li:not([selected]) { display: none }`，
+  于是未选中的「强制应用」也被渲染出来
+- 修复：该规则不再声明 display（可见性完全交还既有显隐规则）
+
+**二、diagnostics 三个工具行排版混乱（手机端最明显）**
+- 根因：LuCI 把 `.diag-action` 留成裸 `display: inline` 容器 —— 桌面宽屏只是
+  松散，390px 手机上三个工具的输入框/按钮组流式挤成一团
+  （实测三行 x=40/40/227、宽 177/219/105）
+- 修复：`.diag-action` 改为 flex 换行布局（gap 8px）；输入框独占一行、
+  按钮组（模式选择 + ··· + ▾）下一行右齐。实测三行均为 x=40 / w=310 / h=38
+
+**三、手机端概览卡片未对齐**
+- 根因：section 标题的「贴边出血」设计（左右负 margin 粘住卡片边缘）假设
+  section padding 等于 --mz-spacing-lg；手机端 padding 不同，导致标题栏比
+  section 宽 ~26px、内容又缩进 9px —— 同屏三种左边缘
+  （实测修复前 title x=15/w=360、sec x=28/w=334、内容 x=37/w=316）
+- 修复：≤854px 时取消负 margin，标题恢复为普通圆角条
+  （实测 title 与内容均为 x=37 / w=316，完全对齐）
+### Changed (2026-09-11 — 手机端概览与 PC 统一为完整仪表盘)
+
+- 根因：概览页此前是双渲染器 —— 手机加载 overview-mobile.js（紧凑面板），
+  该渲染器从未包含 PC 仪表盘的环形仪表 / 图表 / 上行接口 / 地址 / 实时吞吐
+  卡片，即「手机页面这些卡片未显示」的报告
+- 修复：footer.ut 统一加载 overview-dashboard.js；其 CSS 本就带
+  1199px / 767px / 420px 三档断点（2 列与 1 列网格），布局按视口自动重排
+- 手机排版优化：图表标题独占一行、实时值右对齐到下一行（消除「钟）」孤字
+  换行）；仪表网格间距收紧；图表容器 min-width: 0
+- overview-mobile.js 保留在包内但不再被启动
+
+**验证（实证）**：Playwright 手机视口 390×844 实测 —— 4 个环形仪表 +
+负载 / 运行时间 / 连接 / 上行接口 / 地址 / 实时吞吐 + 3 个图表全部渲染，
+无横向溢出（scrollWidth == clientWidth == 390）
+### Fixed (2026-09-11 — 组合按钮菜单异常 + 浏览器图标替换 + 移除轮询指示器)
+
+**一、组合按钮下拉异常（保存并应用 / diagnostics 工具选择器）**
+- 根因 1：combo wrapper 是 `box-sizing: content-box`，内部 ul/li/.open 各自带
+  min-height 34px + padding，叠加成 50px 高的按钮；`···` 指示只有 13px 高，
+  与 34px 的 `▾` 并排 —— 即截图里两个破碎小方块的样子。且旧修复只作用于
+  `.cbi-page-actions` 作用域，diagnostics 的下拉（在 .diag-action 里）没被覆盖
+- 根因 2：`.cbi-dropdown.btn > ul` 规则同时命中了**展开态的 ul.dropdown**，
+  把菜单也压成 36px —— 现已全部用 `:not(.dropdown)` 豁免
+- 根因 3：combo 位于底部 sticky 操作栏内，下方空间恒为 ~40px，而 luci-base
+  仍向下展开并写入 inline top/bottom，菜单落进/落到 sticky 栏之后不可点。
+  用 `!important` 强制 combo 菜单**总是向上展开**（合法覆盖 inline 样式）
+- 实测：firewall 选择 `0 -> 2`、diagnostics 选择 `ping -> ping6`，菜单均完整
+  落在视口内
+
+**二、浏览器标签页图标替换为像素猫娘 logo**
+- 由 192x192 原图生成 favicon-48.png（LANCZOS 缩放）、favicon-180.png
+  （apple-touch）与 favicon.svg（内嵌原图 base64，现代浏览器优先采用）
+
+**三、移除轮询指示器**
+- 隐藏 luci-base 挂载在 #indicators 里的
+  `<span data-indicator="poll-status">`（此前显示为一个孤立的「刷新」文本块）。
+  仅隐藏标签，XHR 轮询本身不受影响
+
+### Fixed (2026-09-11 — 手机顶部空白、全站下拉无法选择、输入框边框不可见、按钮与裸表格排版)
+
+**一、手机端顶部大片空白（手机专属）**
+- 根因：上一轮把页面标题从 `.mz-mobilebar` 移到了 `.mz-mobilebar` 之外的
+  `.mz-topbar`，于是手机同时存在两条头部 —— mobilebar 65px + topbar 57px =
+  122px，其中一条几乎全空，正是截图里的空白带
+- 实测：`#mz-view` 起始位置由 **149px 降到 92px**
+- 修复：手机端移除 `.mz-mobilebar` 之外的 `.mz-topbar`，标题回归 mobilebar
+  （它同时拥有 sticky 槽位与汉堡按钮）
+
+**二、全站下拉"无法选择"（PC + 手机）—— 两个独立根因**
+
+1. **`.cbi-section-node { overflow-x: auto }`**：这一条把每个 section 节点变成
+   滚动容器，而 luci-base **按滚动容器**计算 dropdown 的可用空间，于是每个下拉
+   打开时都被写成 inline `max-height: 0px`，菜单被压成 10px 细条，根本点不到。
+   - 实测（修复前）：`max-height: 0px; height: 0px` 而 `scrollHeight: 200`
+     （选项高度正常 48 / 58 / 78）→ 内容在，只是被压没了
+   - 修复后：`max-height: 580px`、菜单高度 202px、点击 `2 -> 1` 生效
+   - 窄屏表格滚动由既有的 `@media (max-width: 768px)` 规则承担，去掉它没有副作用
+
+2. **毛玻璃的层叠副作用**：玻璃层给每张卡片加了 `backdrop-filter`，该属性会让
+   **每张卡片各自成为层叠上下文**。于是靠前卡片内的下拉菜单（自身 z-index 1000）
+   依然绘制在**靠后卡片**与 sticky 操作栏之下，点击落到邻居卡片的标题上
+   - 修复：用 `:has()` 提升"当前承载已展开下拉的卡片"的层级
+
+**三、下拉文本重复、按钮过高（PC + 手机）**
+- LuCI 把每个选项拆成短标签 `.hide-open` 与长描述 `.hide-close`；主题只在
+  **展开时**隐藏短标签，**从未在关闭时隐藏长描述** → 关闭态按钮渲染出完整描述
+  （51px 高、选项文本重复）
+- 另外 `.cbi-dropdown[open] > ul > li ...` 这类选择器会**同时命中菜单与按钮预览**，
+  把按钮里的标题也一起清空了 —— 共 **11 条**规则已限定到 `ul.dropdown`
+- 修复后：关闭态 43px 单行、标题为单个"硬件流量卸载"、展开时按钮仍保留标题
+
+**四、所有文本输入框不明显（PC + 手机）**
+- 根因：玻璃作用域把 `--mz-color-border` 覆盖成 `rgba(255,255,255,.55)`（近白），
+  而 input / select / textarea / 表单下拉都用它做边框 → 浅色页面上边框不可见
+- 修复：新增控件专用令牌 `--mz-input-bg / -input-border / -input-border-hover /
+  -input-placeholder`（light 与 dark 各一套），与卡片边框彻底解耦
+
+**五、按钮排版**
+- 「保存并应用」组合按钮是 `box-sizing: content-box`，比旁边的 Save 高 2px
+- 修复：操作栏内所有按钮统一 36px / border-box / 同一圆角；实测 apply 与 save
+  均为 `36px / border-box`
+
+**六、status/processes 与 status/channel_analysis 排版混乱**
+- 这两页的表格**没有 `.cbi-section` 包裹**，因此从未获得卡片样式，是贴着背景的裸表格
+- 修复：按 `body[data-page]` 为这些表格补卡片样式（圆角 14px / 1px 边框 / 表头 /
+  行悬停），并限制进程命令列宽度避免其独占约 70% 的行宽
+
+**验证（实证，非推断）**：Playwright **14/14** 通过（手机 390×844 + PC 1440×900），
+断言覆盖上述每一项的具体数值（元素高度、max-height、边框色、box-sizing、表格圆角）
+
+
+### Changed (2026-09-11 — 概览卡片视觉重构 + 菜单归位「系统」+ 独立壁纸翻译包 + 登录页汉化)
+
+**一、概览页卡片视觉重构（纯 CSS，未改动任何插件 DOM）**
+
+端口状态卡片：LuCI 为每个端口输出四个兄弟节点（端口名 / 图标+速率 / 3px 区域色条 /
+流量读数）。主题用 `grid` + `order` 把它们重排为「静默标签 → 图标+速率主标题 →
+流量页脚 → 底部 4px 强调色带」。
+- 原先那根「粗灰色横条」其实是区域色条被 LuCI 的 `padding: 8px 10px` 与
+  `rgba(--zone-color-rgb, .78)` 底色包成了 20px 高的块；现两处一并复位，
+  颜色以卡片底部 4px 色带保留
+- 端口名由居中的浅紫实底块改为左对齐的小号大写标签
+- 图标放大到 26px、速率升至 1.02rem/650 作为卡片主标题
+- 流量行加发丝分隔线，字号与行距收紧
+- 卡片改用 `--mz-radius-lg` 圆角 + 玻璃底，hover 轻微上浮
+
+网络/上游卡片：
+- 标题栏由整块 `rgba(--zone-color-rgb, .78)` 灰底改为透明 + 左侧 4px 区域色胶囊
+  （语义保留，观感与毛玻璃区块一致）
+- 字段「标签: 值」行距与字号收敛，`<strong>` 标签降为次要色，让数值读起来是内容
+
+**二、壁纸设置菜单归位「系统」分组**
+- `admin/mint-wallpaper` → `admin/system/mint-wallpaper`，侧栏显示「Mint 壁纸」
+
+**三、新增独立翻译包 `luci-i18n-mint-wallpaper-zh-cn`**
+- `wallpaper/po/zh_Hans/luci-app-mint-wallpaper.po`（35 条），依赖
+  `luci-app-mint-wallpaper`；发布产物由 6 个增至 8 个
+- 只装壁纸包（不装主题翻译包）也能得到中文设置页
+
+**四、修复：主题从未随包发布中文，登录页与后台全英文**
+- 根因：实机 `/usr/lib/lua/luci/i18n/` 里没有任何 mint 的 lmo（主题为源码部署，
+  `luci-i18n-mint-zh-cn` 包从未安装），所有 `_()` 回退到英文原文
+- 现提供主题 lmo 与 `zh_cn` / `zh_CN` 别名符号链接（固件把 `luci.main.lang`
+  写成下划线形式时同样命中）
+
+**验证（实证，非推断）**
+- 本地实跑 `build-direct.sh`：8 个包 + 8 份 buildinfo；`verify-package.sh` 与
+  `install-test.sh` 全部通过
+- 实机 7/7 断言通过：登录页显示中文（用户名 / 密码 / 登录 / 记住我）且无英文残留；
+  菜单位于 `admin/system/mint-wallpaper` 且标题为「Mint 壁纸」；
+  壁纸设置页全中文（壁纸 / 设置 / 启用 / 桌面端来源 / 移动端来源 / 遮罩不透明度）
+- 检测口径说明：LuCI 会把菜单 JSON（含原始 msgid）内嵌在 `<script>` 中，
+  因此本地化断言必须基于 `innerText` 而非原始 HTML，否则会误报未翻译
+
+### Changed (2026-09-11 — 壁纸设置拆分为独立包 luci-app-mint-wallpaper)
+
+按「主题只负责 UI」的方向，把壁纸设置从主题包中拆出为可独立安装的
+`luci-app-mint-wallpaper`，并把入口从「系统」分组提升为侧栏独立顶级菜单。
+
+- **新增包 `luci-app-mint-wallpaper`**（仓库 `wallpaper/` 目录）：壁纸设置页
+  （`view/mint/wallpaper.js`）、rpcd 后端（`usr/libexec/rpcd/mint`）、服务端缓存
+  刷新脚本与 cron、UCI 配置 `/etc/config/mint`（本包 conffile）、菜单与 ACL、
+  `/lib/upgrade/keep.d` 上传图片保护
+- **主题包精简为纯 UI**：`Depends` 由 `luci-base +curl` 收敛为 `luci-base`，
+  且不再声明 `/etc/config/mint` 为 conffile（两个包不能拥有同一路径）
+- **`ucode/mint/wallpaper.uc` 有意保留在主题包内**：header.ut 以**静态 import**
+  引用该模块，把它拆走会让未安装壁纸包时的登录页模板直接加载失败。该模块只
+  **读** UCI 并在渲染期解析壁纸地址；所有**写**的部分（设置页、rpcd save、
+  默认值、cron）都在新包里
+- **独立顶级菜单入口**：`admin/system/mintwallpaper` → `admin/mint-wallpaper`。
+  侧栏直接可见，不再折叠在「系统」分组内；同时 settings 由第 4 层移到第 3 层，
+  菜单渲染器（三层上限）现在能够正常列出该项
+- **升级路径清理**：主题的 postinst（版本升级时唯一会执行的那个，postrm 在
+  upgrade 分支提前返回）与 postrm 都会删除旧的
+  `usr/share/luci/menu.d/luci-theme-mint.json` 与
+  `usr/share/rpcd/acl.d/luci-theme-mint.json`，否则升级后会出现两个
+  「Mint Wallpaper」入口
+- **主题 postrm 不再删除用户数据**：`custom-*.jpg`（上传壁纸）、
+  `wallpaper-*.img`（缓存图）与 cron 助手已归壁纸包所有，卸载主题不再触碰它们
+- **CI 单次产出 6 个包**：新增 `luci-app-mint-wallpaper` 的 ipk/apk。
+  `scripts/build-direct.sh` 参数化装配两套载荷并分别设置可执行位；
+  `scripts/verify-package.sh` 按包名分派校验规则（主题禁止再依赖 curl、
+  壁纸包必须有 curl 与 conffiles）
+- **版本口径统一**：两个包都取仓库 HEAD 的提交时间与短哈希，避免同一 commit
+  下两个包报出不同版本号
+- **验证（实证，非推断）**：本地实跑 `build-direct.sh` 产出 6 个包 + 6 份
+  buildinfo，`verify-package.sh` 全部通过（含可执行位、conffile、依赖断言）；
+  实机部署后侧栏出现 `/cgi-bin/luci/admin/mint-wallpaper/settings` 独立入口、
+  旧入口消失、设置页返回 HTTP 200，6/6 断言通过
+
+
+### Fixed (2026-09-11 — 端口状态卡片排版、卡片玻璃统一、随机壁纸失效)
+
+实机截图定位（ImmortalWrt SNAPSHOT 192.168.88.1，Chromium 实测取值）：
+
+- **端口状态卡片挤成窄条、右侧大片空白**：网格轨道为
+  `repeat(auto-fill, minmax(160px, 210px))`，且卡片被
+  `max-width: 210px !important` 钉死。`auto-fill` 会按容器宽度创建
+  **全部空轨道**（1182px 下为 5 个），路由器只有 2 个端口时后 3 个轨道
+  留空，右侧因此出现约 560px 死区。改为
+  `repeat(auto-fit, minmax(200px, 1fr))`（空轨道折叠 + 剩余轨道铺满）
+  并移除卡片宽度上限。实测同一网格由 `210px 210px 210px 210px 210px`
+  （仅前 2 列有内容）变为 `584px 584px`，两卡等宽铺满整行
+- **状态卡片未使用全局毛玻璃**：端口卡片在 `--mz-color-surface-2`（浅色 +
+  壁纸下解析为 0.84 白）上绘制，而同一屏的 section 为 0.72，视觉上读作
+  实色方块而非毛玻璃。新增统一规则
+  `body.mz-has-wallpaper #mz-view .ifacebox`（id + 2 class，特异性高于
+  端口网格规则），卡片背景统一走 `--mz-panel-bg`，模糊/饱和改用
+  `--mz-glass-*` 令牌。实测卡片与 section 均为
+  `rgba(255,255,255,.72)` + `blur(18px) saturate(1.3)`
+- **随机壁纸失效**：`initGlobalWallpaper()` 把 `ui_random` 与 `enabled`
+  并列作为前置返回条件，而 `ui_random` 出厂默认 `0`。结果即使 cron 已经
+  抓好服务端缓存图（`/luci-static/mint/wallpaper-pc.img` —— 本地文件、
+  零外部请求、可 304 复用），也永远不会被应用，后台只剩渐变兜底。
+  现改为：`ui_random` 只约束「每次导航是否重新随机拉取远程图」，
+  服务端缓存图始终优先使用；既无缓存又未开启随机时才退回渐变。
+  实测 `--mz-wallpaper` 已解析为本地缓存图，页面仅请求该本地文件，
+  无任何外部壁纸 API 请求
+
+### Fixed (2026-09-11 — 架构级重构：层叠体系、Dropdown 裁剪与遮挡、Dark 模式壁纸层、PC 顶栏)
+
+本轮以「从架构层面解决，不堆页面级 Hack」为原则，先做全量代码审查（cascade.css
+5955 行 + 模板/JS/ucode 后端全链路），定位并修复以下根因。全部改动在实机
+ImmortalWrt SNAPSHOT 192.168.88.1 上以真实浏览器（Chromium）验证，非推断。
+
+**Dropdown（下拉菜单）—— 三个独立根因，逐一修复**
+
+- **向上展开时菜单高度塌陷为 0**：主题 CSS 在 `.cbi-dropdown[open] > ul` 上硬编码
+  `top: 100%`，而 LuCI 的 dropdown JS 在下空间不足时会改用内联 `bottom` 向上展开。
+  两个偏移同时成立造成 over-constrained，菜单内容高度被压成 0，而每个 `<li>` 仍
+  实测 48px —— 菜单只渲染为约 10px 的细条。修复：定位权完全交还组件 JS
+  （`top: auto`），不预设方向。实测同一菜单由 **10px → 218px**，4 个选项全部可见
+- **`.mz-view { overflow-x: clip }` 裁剪一切越界弹出层**：`clip` 不是滚动容器，
+  会直接切掉任何伸出内容盒的绝对定位后代 —— 页面右侧/底部的下拉、表单末尾的
+  保存并应用组合按钮首当其冲。已移除该守卫，宽度约束改由 `min-width: 0` 承担，
+  真正需要滚动的元素（数据表、日志面板）各自声明 overflow
+- **`.mz-main { position: relative; z-index: 1 }` 形成层叠上下文**：该组合把内容区
+  变成一个封闭层叠上下文，区内的下拉（`z-index` 1000）只能与 `.mz-main` 的 1
+  比较，永远低于 `.mz-sidebar`（fixed + z-index 40），表现为「下拉被侧栏/Card
+  遮挡」。壁纸层改为负 z-index 后内容区无需抬升，已移除该属性组合
+
+**Light / Dark 模式**
+
+- **两处 Dark 选择器永不匹配**：`body.mz-has-wallpaper[data-theme="dark"]` 把
+  `data-theme` 写在 `<body>` 上，而该属性实际挂在 `<html>`（header.ut 的
+  `document.documentElement`）。结果 Dark 页面一直绘制亮色渐变壁纸层，
+  Dark 玻璃面板也从未生效。已统一为 `html[data-theme="dark"] body.mz-has-wallpaper`
+- **Dark 模式彻底不渲染壁纸层**：两个壁纸伪元素改用 `content: none` 从盒子树中
+  移除（此前只是 `background-image: none`，仍参与合成）。JS 侧 Dark 分支同样
+  提前返回，不发任何壁纸 API 请求，且不改动用户 UCI 壁纸配置
+- **Dark 玻璃面板在深色底上不可见**：原 Dark 表面为 `rgba(255,255,255,.07)`
+  的白色微透，叠在深色页面上等于没有卡片。改为深灰玻璃
+  （`rgba(30,34,42,.88)` / `rgba(38,43,52,.92)`），并让下拉与模态比普通卡片更实
+  （`.96` / `.97`）。Light 侧统一为白色微透玻璃（0.62–0.84，blur 18–20px）
+- **补齐从未定义的玻璃变量**：`--mz-glass-blur-strong` 与 `--mz-glass-saturate`
+  全文件只有引用没有定义，导致移动端顶栏的 `backdrop-filter` 整条声明失效
+  （`blur()` 无参数即无效）。已在 `:root` 补齐，移动端顶栏毛玻璃恢复
+- 新增 `@supports not (backdrop-filter: blur(1px))` 兜底：不支持毛玻璃的浏览器
+  退回近不透明表面，避免半透明面板压在照片上丢失可读性
+
+**层叠体系（Layer System）**
+
+- 新增 `--mz-z-*` 变量族（wallpaper/-2、base/1、content/10、sticky/100、
+  navigation/200、scrim/300、drawer/400、dropdown/1000、popover/1100、
+  modal/2000、toast/3000），**全文件 12 处字面 z-index 已全部收敛到变量**，
+  消除 100/1000/1001/2000 混用与"谁的数大谁赢"式维护
+
+**PC / Mobile 顶栏**
+
+- **桌面隐藏页面标题栏**（`.mz-topbar`，`min-width: 855px`）：页面自身的 `<h2>`
+  已经承担标题，标题栏只是重复
+- **LuCI 原生 `#indicators` 槽位拆出为独立 `.mz-indicatorbar`**：该槽位由
+  `ui.js#showIndicator()` 挂载，承载未保存更改/应用指示器与 XHR 轮询徽标。
+  若继续留在被隐藏的顶栏内，桌面端会连带丢失这些原生能力。新容器 sticky、
+  空时零高度（只留横向内边距），不使用不占位
+- 移动端保留标题栏（`.mz-topbar` 显示，`position: static` 避免与 sticky 的
+  `.mz-mobilebar` 在 `top: 0` 相互覆盖），同时抑制 `.mz-mobilebar-title` 的
+  重复标题
+
+**标题内嵌状态标签**
+
+- 「端口状态 + 隐藏」这类 `<h3>`（第三方视图内联
+  `display:flex;justify-content:space-between`，内含 `<span class="label">`）
+  被主题自身的 section 标题规则挤到换行。修复采用**作用域限定**：
+  `#mz-view .cbi-section > h3:has(> .label)` 等，并配套 `mz-ui.js` 打
+  `.mz-h3-pill` 类（兼容不支持 `:has()` 的浏览器）。未使用 `h3 { ... }` 全局覆盖，
+  未改动任何第三方 DOM 结构
+
+**其它**
+
+- 移除 `.cbi-page-actions .cbi-dropdown.cbi-button` 的 `overflow: hidden`
+  （保存并应用组合按钮展开菜单被裁剪的直接来源之一），改由后续
+  `overflow: visible !important` 安全网兜底
+- 验证结论（实机 + Chromium 真实渲染，非推断）：桌面 1920×1080 / 1366×768 与
+  移动 390×844 / 412×915 四档视口下，`#indicators` 槽位存在、`.mz-view` 不再裁剪、
+  下拉展开不被任何祖先裁剪且完整落在视口内、Dark 模式无壁纸请求且壁纸层
+  `content: none`、移动端无横向溢出，共 29 项断言全部通过
+
+### Fixed (2026-09-10 — 实机：总览端口状态卡片塌缩 + 接口页设备 tooltip 常显叠层）
+
+在 ImmortalWrt SNAPSHOT（LuCI Master）192.168.88.1 上截图定位并修复：
+
+- **总览「端口状态」端口挤成 100px 窄条、大片空白**：当前 LuCI 端口网格内联样式为
+  `minmax(100px, 1fr)`（旧版为 `minmax(70px, 1fr)`），且网格父级是裸 `div` 而非
+  `.cbi-section`；旧选择器两项都匹配不到，端口卡仍被内联 `width:100px` 钉死。
+  现同时匹配两种 minmax 写法、不再强制 `.cbi-section` 父级，并用
+  `width:auto !important` 覆盖内联宽度。实测 eth0/eth1 由 102px 展开为约 549px
+  等宽卡片，后续网络/DHCP/无线/UPnP 区块排版恢复正常
+- **接口页设备详情面板常显、叠层导致排版混乱**：LuCI 设备弹层节点是
+  `span.cbi-tooltip.ifacebadge.large`。`#mz-view .ifacebadge`（ID 选择器，
+  特异性 1,1,0）把 `display:inline-flex` 顶掉了
+  `.cbi-tooltip-container .cbi-tooltip { display:none }`（0,2,0），每个
+  eth/wifi 图标下方的类型/MAC/流量面板全部永久展开并压住说明列。
+  修复：`#mz-view .ifacebadge:not(.cbi-tooltip)` 只样式真正的角标；
+  tooltip 隐藏规则加 `!important`，仅 hover/focus-within 时 `display:flex`。
+  实测接口卡、设备表、操作按钮列恢复整洁，悬停才弹出详情
+- 桌面 1440 与接口页窄屏均已用无头浏览器截图复验
+
+### Changed (2026-09-10 — 云编译直出：去掉 OpenWrt SDK，单流水线产出 IPK+APK)
+
+- **删除 SDK 全量编译路径**：主题是纯数据包（无 `src/`），旧 CI 仍下载约 300MB 官方 SDK 并编译 luci-base 依赖链（rpcd、ucode、lucihttp、curl…），单次 10–20 分钟。现改为 `scripts/build-direct.sh` 按 `luci.mk` 安装布局装配载荷，再直接写出与官方后端一致的容器：
+  - ipk = `gzip(tar(debian-binary, data.tar.gz, control.tar.gz))`（OpenWrt `scripts/ipkg-build`）
+  - apk = apk-tools v3 ADB 容器（`ADBd` + raw deflate，与 `apk mkpkg` 一致）
+- **合并双流水线为单工作流**：删除 `build-apk.yml` / `build-ipk.yml`，新增 `build.yml`。一次跑完全部四个包并各自校验：
+  - `luci-theme-mint-<release>-all.ipk` / `.apk`
+  - `luci-i18n-mint-zh-cn-<release>-all.ipk` / `.apk`
+  - 架构仍为无关包：ipk 记 `all`，apk 记 `noarch`；一份产物可装任意目标
+- **release.yml 适配单工作流**：不再等待 APK/IPK 两条流水线汇合，改为汇总 `Build packages` 的单一 artifact 后发布 nightly / 正式版
+- **产物命名去掉系列/目标后缀**：旧名含 `23.05-x86_64` / `snapshot-x86_64` 等易误导字段（包本身与目标无关）；现统一为 `luci-theme-mint-<release>-all.ipk`、`luci-theme-mint-<release>.apk`
+- **`mkadbpkg.py` 跨平台加固**：
+  - 新增 `--exec <相对路径>`：对指定载荷强制写入 0755。Windows/NTFS 无法向 `os.lstat` 表达 Unix 执行位，仅靠 chmod 会让 APK 丢失脚本执行位（`verify-package.sh` 会拒绝）
+  - `scan_dirs` 路径统一为 POSIX `/`，修复 Windows 上 `os.walk`/`relpath` 反斜杠导致 `--exec` 匹配失败
+- **CI 调用方式**：workflow 一律 `bash scripts/...`，避免新建脚本未带可执行位时 runner 报 `Permission denied`（exit 126）
+- **清理无效 Release**：删除旧 `nightly`（混入 ImmortalWrt 杂项包、多系列重复资产、命名混乱）；新流水线已重新发布干净 nightly（4 包 + buildinfo + 发布说明）
+- **文档**：README 云编译章节、RELEASE.md 工作流与产物说明同步为「单工作流直出、无 SDK」
 
 ### Fixed (2026-09-10 — 云编译修复与优化：ipk/apk 云构建全线转绿的前置缺陷 + 简中翻译入包 + 构建提速)
 
@@ -476,6 +815,7 @@
 
 ---
 
-[Unreleased]: https://github.com/LianXia233/luci-theme-mint/compare/v0.2.0...HEAD
+[1.0.2]: https://github.com/LianXia233/luci-theme-mint/compare/v0.2.0...v1.0.2
+[Unreleased]: https://github.com/LianXia233/luci-theme-mint/compare/v1.0.2...HEAD
 [0.2.0]: https://github.com/LianXia233/luci-theme-mint/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/LianXia233/luci-theme-mint/releases/tag/v0.1.0
